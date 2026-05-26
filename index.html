@@ -63,6 +63,7 @@
   .exp-btn:active{background:var(--gray-lt)}
   .exp-btn .ei{font-size:26px}
   #file-in{display:none}
+  #btn-torch.on{background:rgba(255,220,0,.75);color:#111}
 
   #method-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--blue-lt);color:var(--blue);display:inline-block;margin-top:2px}
 </style>
@@ -124,6 +125,8 @@
 
 <script>
 const urls=[], COOL=2200;
+let torchOn=false, torchSupported=false;
+let torchTrack=null, torchOn=false;
 let ms=null, raf=null, lastUrl="", lastT=0, detector=null, useDetector=false;
 
 const video=document.getElementById("video");
@@ -152,6 +155,7 @@ async function initDetector(){
 function log(msg){dbg.style.display="block";dbg.textContent=msg;}
 
 function beep(){
+  // som
   try{
     const ac=new(window.AudioContext||window.webkitAudioContext)();
     const o=ac.createOscillator(),g=ac.createGain();
@@ -161,6 +165,21 @@ function beep(){
     g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+.22);
     o.start();o.stop(ac.currentTime+.22);
   }catch(e){}
+  // vibração
+  try{ if(navigator.vibrate) navigator.vibrate([80,30,40]); }catch(e){}
+}
+
+async function toggleTorch(){
+  if(!torchTrack)return;
+  torchOn=!torchOn;
+  try{
+    await torchTrack.applyConstraints({advanced:[{torch:torchOn}]});
+    const btn=document.getElementById("btn-torch");
+    torchOn ? btn.classList.add("on") : btn.classList.remove("on");
+  }catch(e){
+    torchOn=!torchOn;  // reverte se falhar
+    log("lanterna: "+e.message);
+  }
 }
 
 function status(msg,tipo){
@@ -252,6 +271,22 @@ async function toggleCam(){
     qrBox.style.display="block";
     btn.textContent="⏹ Parar";btn.disabled=false;
     log(`cam ${video.videoWidth}×${video.videoHeight} | método: ${useDetector?"nativo":"jsQR"}`);
+    // verifica suporte à lanterna
+    const track=ms.getVideoTracks()[0];
+    const caps=track.getCapabilities?track.getCapabilities():{};
+    torchSupported=!!(caps.torch);
+    const torchBtn=document.getElementById("btn-torch");
+    torchBtn.style.display=torchSupported?"flex":"none";
+    torchOn=false; torchBtn.textContent="🔦";
+    // verifica suporte a lanterna
+    const track = ms.getVideoTracks()[0];
+    const caps  = track.getCapabilities ? track.getCapabilities() : {};
+    if(caps.torch){
+      torchTrack = track; torchOn = false;
+      document.getElementById("btn-torch").style.display = "flex";
+      document.getElementById("btn-torch").style.alignItems = "center";
+      document.getElementById("btn-torch").style.justifyContent = "center";
+    }
     if(useDetector) raf=requestAnimationFrame(scanNativo);
     else            raf=requestAnimationFrame(scanJsQR);
   }catch(err){
@@ -268,9 +303,29 @@ function pararCam(){
   video.srcObject=null;video.style.display="none";
   document.getElementById("cam-ph").style.display="flex";
   qrBox.style.display="none";
+  torchOn=false;
+  const tb=document.getElementById("btn-torch");tb.style.display="none";tb.textContent="🔦";
+  torchTrack=null; torchOn=false;
+  const bt=document.getElementById("btn-torch");
+  bt.style.display="none"; bt.classList.remove("on");
   document.getElementById("btn-cam").textContent="📷 Câmera";
   document.getElementById("btn-cam").disabled=false;
   dbg.style.display="none";st.style.display="none";
+}
+
+// ── Lanterna ─────────────────────────────────────────────────────
+async function toggleTorch(){
+  if(!ms||!torchSupported)return;
+  torchOn=!torchOn;
+  try{
+    const track=ms.getVideoTracks()[0];
+    await track.applyConstraints({advanced:[{torch:torchOn}]});
+    document.getElementById("btn-torch").textContent=torchOn?"💡":"🔦";
+    document.getElementById("btn-torch").style.background=torchOn?"rgba(255,200,0,.7)":"rgba(0,0,0,.55)";
+  }catch(e){
+    torchOn=!torchOn;
+    log("lanterna não suportada: "+e.message);
+  }
 }
 
 // ── Galeria ───────────────────────────────────────────────────────
@@ -325,8 +380,8 @@ async function expShare(){
   if(navigator.share){
     try{
       const file=new File([txt()],"qrcode_lido.txt",{type:"text/plain"});
-      if(navigator.canShare?.({files:[file]})) await navigator.share({files:[file],title:"NFC-e QR Codes"});
-      else await navigator.share({title:"NFC-e QR Codes",text:txt()});
+      if(navigator.canShare?.({files:[file]})) await navigator.share({files:[file]});
+      else await navigator.share({files:[file]});
       return;
     }catch(e){if(e.name==="AbortError")return;}
   }
