@@ -36,7 +36,7 @@
   #qr-box{width:62%;aspect-ratio:1/1;border:3px solid rgba(255,255,255,.85);border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.4);display:none;transition:border-color .15s}
   #qr-box.hit{border-color:#4ade80;animation:pop .3s ease}
   @keyframes pop{50%{transform:scale(1.06)}100%{transform:scale(1)}}
-  #dbg{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);color:#0f0;font-size:10px;font-family:monospace;padding:3px 8px;text-align:center;display:none}
+  #dbg{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.8);color:#4ade80;font-size:11px;font-family:monospace;padding:6px 8px;text-align:center;display:none;z-index:20;}
 
   /* Botão da Lanterna Superior Direito */
   #btn-torch {
@@ -96,7 +96,7 @@
       <div class="ch-icon blue">📷</div>
       <div>
         <h2>Ler QR Code</h2>
-        <p>Aponte a câmera para o QR Code1</p>
+        <p>Aponte a câmera para o QR Code</p>
       </div>
     </div>
     <div class="card-body">
@@ -160,17 +160,14 @@ async function initDetector(){
       if(formats.includes("qr_code")){
         detector=new BarcodeDetector({formats:["qr_code"]});
         useDetector=true;
-        log("BarcodeDetector nativo ✓");
         return;
       }
     }catch(e){}
   }
-  log("jsQR fallback");
 }
 
-function log(msg){dbg.style.display="block";dbg.textContent=msg;}
+function log(msg){dbg.style.display="block";dbg.innerHTML=msg;}
 
-// Desbloqueia o hardware de som e vibração no momento do clique do usuário
 function inicializarSomEVibracao() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -178,14 +175,14 @@ function inicializarSomEVibracao() {
   if (audioCtx && audioCtx.state === 'suspended') {
     audioCtx.resume();
   }
-  // Executa uma microvibração imperceptível de 1ms apenas para "acordar" a API no Android
-  if (navigator.vibrate) {
-    navigator.vibrate(1);
+  // Ativação silenciosa da API de vibração
+  if ("vibrate" in navigator) {
+    navigator.vibrate([1]); 
   }
 }
 
 function beep(){
-  // 1. Emissão do som de confirmação usando o contexto previamente validado
+  // 1. Áudio
   try{
     if (audioCtx) {
       const o=audioCtx.createOscillator(), g=audioCtx.createGain();
@@ -195,14 +192,20 @@ function beep(){
       g.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime+.22);
       o.start(); o.stop(audioCtx.currentTime+.22);
     }
-  }catch(e){ log("Erro áudio: "+e.message); }
+  }catch(e){ console.error("Erro áudio", e); }
   
-  // 2. Vibração ativa do aparelho (Pulso de 250ms forte e perceptível)
+  // 2. Vibração (com debug no log da tela)
   try{ 
-    if(navigator.vibrate) {
-      navigator.vibrate(250); 
-    } 
-  }catch(e){ log("Erro vibração: "+e.message); }
+    if("vibrate" in navigator) {
+      // Usa um array para garantir compatibilidade e cria pulso duplo
+      const sucesso = navigator.vibrate([150, 50, 150]); 
+      log(`Lido! Vibração: ${sucesso ? "OK" : "Bloqueada pelo SO"}`);
+    } else {
+      log("Lido! API Vibrate ausente (iOS?)");
+    }
+  }catch(e){ 
+    log("Erro ao vibrar: " + e.message); 
+  }
 }
 
 async function toggleTorch(){
@@ -266,13 +269,13 @@ async function scanNativo(){
   try{
     const codes=await detector.detect(video);
     if(codes.length)add(codes[0].rawValue);
-  }catch(e){log("det err:"+e.message);}
+  }catch(e){}
   raf=requestAnimationFrame(scanNativo);
 }
 
 function scanJsQR(){
   if(!ms)return;
-  if(video.readyState<2){log("aguardando vídeo...");raf=requestAnimationFrame(scanJsQR);return;}
+  if(video.readyState<2){raf=requestAnimationFrame(scanJsQR);return;}
   const W=video.videoWidth,H=video.videoHeight;
   if(!W||!H){raf=requestAnimationFrame(scanJsQR);return;}
   const scale=Math.min(1,480/Math.max(W,H));
@@ -282,20 +285,17 @@ function scanJsQR(){
   let data;
   try{data=ctx.getImageData(0,0,w,h);}
   catch(e){
-    log("⚠️ canvas bloqueado — use galeria ou HTTPS");
-    status("⚠️ Câmera só funciona via HTTPS ou servidor local.<br>Use o botão Galeria para imagens.","err");
+    status("⚠️ Câmera só funciona via HTTPS ou servidor local.","err");
     pararCam();return;
   }
   const qr=jsQR(data.data,w,h,{inversionAttempts:"dontInvert"});
   if(qr)add(qr.data);
-  log(`jsQR ${w}×${h} | ${urls.length} lidas`);
   raf=requestAnimationFrame(scanJsQR);
 }
 
 async function toggleCam(){
   if(ms){pararCam();return;}
   
-  // Ativação por intenção de clique do usuário
   try { inicializarSomEVibracao(); } catch(e){}
 
   const btn=document.getElementById("btn-cam");
@@ -312,7 +312,6 @@ async function toggleCam(){
     video.style.display="block";
     qrBox.style.display="block";
     btn.textContent="⏹ Parar";btn.disabled=false;
-    log(`cam ${video.videoWidth}×${video.videoHeight} | método: ${useDetector?"nativo":"jsQR"}`);
     
     const track=ms.getVideoTracks()[0];
     const caps=track.getCapabilities?track.getCapabilities():{};
@@ -331,9 +330,7 @@ async function toggleCam(){
     else            raf=requestAnimationFrame(scanJsQR);
   }catch(err){
     ms=null;btn.textContent="📷 Câmera";btn.disabled=false;
-    const msgs={NotAllowedError:"❌ Permissão negada",NotFoundError:"❌ Câmera não encontrada",OverconstrainedError:"❌ Resolução incompatível"};
-    status(msgs[err.name]||"❌ Erro: "+err.message,"err");
-    log(err.name+": "+err.message);
+    status("❌ Câmera bloqueada/indisponível","err");
   }
 }
 
@@ -356,9 +353,7 @@ function pararCam(){
 }
 
 async function lerGaleria(input){
-  // Ativação por intenção de clique na galeria
   try { inicializarSomEVibracao(); } catch(e){}
-
   const files=[...input.files];if(!files.length)return;
   let ok=0,err=0;
   for(const f of files){
@@ -386,28 +381,25 @@ async function lerGaleria(input){
       img.src=URL.createObjectURL(f);
     });
   }
-  if(ok>0&&!err)      status(`✅ ${ok} QR(s) lido(s)`,"ok");
+  if(ok>0&&!err)      status(`✅ ${ok} lido(s)`,"ok");
   else if(ok>0)       status(`✅ ${ok} lido(s) · ${err} sem QR`,"ok");
   else                status("❌ Nenhum QR encontrado","err");
   input.value="";
 }
 
 const txt=()=>urls.join("\n");
-
 function expLocal(){
   if(!urls.length){alert("Nenhuma URL.");return;}
   const a=document.createElement("a");
   a.href=URL.createObjectURL(new Blob([txt()],{type:"text/plain"}));
   a.download="qrcode_lido.txt";a.click();URL.revokeObjectURL(a.href);
 }
-
 async function expShare(){
   if(!urls.length){alert("Nenhuma URL.");return;}
   if(navigator.share){
     try{
       const file=new File([txt()],"qrcode_lido.txt",{type:"text/plain"});
-      if(navigator.canShare?.({files:[file]})) await navigator.share({files:[file]});
-      else await navigator.share({files:[file]});
+      await navigator.share({files:[file]});
       return;
     }catch(e){if(e.name==="AbortError")return;}
   }
