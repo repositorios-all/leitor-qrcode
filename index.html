@@ -50,7 +50,7 @@
     color: #fff;
     border: none;
     font-size: 20px;
-    display: none; /* Aparece apenas se houver suporte */
+    display: none;
     align-items: center;
     justify-content: center;
     z-index: 15;
@@ -81,13 +81,7 @@
   .del-btn{flex-shrink:0;background:none;border:none;color:var(--red);font-size:15px;cursor:pointer;padding:2px 4px}
   #empty-msg{text-align:center;padding:18px;font-size:13px;color:var(--text2)}
 
-  .exp-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .exp-btn{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border:1px solid var(--gray-bd);border-radius:10px;background:var(--white);cursor:pointer;font-size:12px;color:var(--text2);font-weight:600}
-  .exp-btn:active{background:var(--gray-lt)}
-  .exp-btn .ei{font-size:26px}
   #file-in{display:none}
-
-  #method-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--blue-lt);color:var(--blue);display:inline-block;margin-top:2px}
 </style>
 </head>
 <body>
@@ -102,7 +96,7 @@
       <div class="ch-icon blue">📷</div>
       <div>
         <h2>Ler QR Code</h2>
-        <p>Aponte a câmera para o QR Code</p>
+        <p>Aponte a câmera para o QR Code1</p>
       </div>
     </div>
     <div class="card-body">
@@ -148,11 +142,11 @@
 
 <script>
 const urls=[], COOL=2200;
-let torchOn=false, torchTrack=null;
+let torchOn=false, torchTrack=null, audioCtx=null;
 let ms=null, raf=null, lastUrl="", lastT=0, detector=null, useDetector=false;
 
 const video=document.getElementById("video");
-const canvas=canvasContainer = document.getElementById("canvas");
+const canvas=document.getElementById("canvas");
 const ctx=canvas.getContext("2d",{willReadFrequently:true});
 const qrBox=document.getElementById("qr-box");
 const st=document.getElementById("status");
@@ -176,24 +170,39 @@ async function initDetector(){
 
 function log(msg){dbg.style.display="block";dbg.textContent=msg;}
 
+// Desbloqueia o hardware de som e vibração no momento do clique do usuário
+function inicializarSomEVibracao() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  // Executa uma microvibração imperceptível de 1ms apenas para "acordar" a API no Android
+  if (navigator.vibrate) {
+    navigator.vibrate(1);
+  }
+}
+
 function beep(){
-  // Emissão do som de confirmação
+  // 1. Emissão do som de confirmação usando o contexto previamente validado
   try{
-    const ac=new(window.AudioContext||window.webkitAudioContext)();
-    const o=ac.createOscillator(),g=ac.createGain();
-    o.connect(g);g.connect(ac.destination);
-    o.type="sine";o.frequency.value=1046;
-    g.gain.setValueAtTime(.45,ac.currentTime);
-    g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+.22);
-    o.start();o.stop(ac.currentTime+.22);
-  }catch(e){}
+    if (audioCtx) {
+      const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination);
+      o.type="sine"; o.frequency.value=1046;
+      g.gain.setValueAtTime(.45, audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime+.22);
+      o.start(); o.stop(audioCtx.currentTime+.22);
+    }
+  }catch(e){ log("Erro áudio: "+e.message); }
   
-  // Vibração ativa do aparelho (Pulso limpo de 200ms)
+  // 2. Vibração ativa do aparelho (Pulso de 250ms forte e perceptível)
   try{ 
     if(navigator.vibrate) {
-      navigator.vibrate(200); 
+      navigator.vibrate(250); 
     } 
-  }catch(e){}
+  }catch(e){ log("Erro vibração: "+e.message); }
 }
 
 async function toggleTorch(){
@@ -285,6 +294,10 @@ function scanJsQR(){
 
 async function toggleCam(){
   if(ms){pararCam();return;}
+  
+  // Ativação por intenção de clique do usuário
+  try { inicializarSomEVibracao(); } catch(e){}
+
   const btn=document.getElementById("btn-cam");
   btn.textContent="⏳ Iniciando...";btn.disabled=true;
   try{
@@ -301,7 +314,6 @@ async function toggleCam(){
     btn.textContent="⏹ Parar";btn.disabled=false;
     log(`cam ${video.videoWidth}×${video.videoHeight} | método: ${useDetector?"nativo":"jsQR"}`);
     
-    // Configura e verifica suporte à lanterna na faixa de vídeo ativa
     const track=ms.getVideoTracks()[0];
     const caps=track.getCapabilities?track.getCapabilities():{};
     if(caps.torch){
@@ -332,7 +344,6 @@ function pararCam(){
   document.getElementById("cam-ph").style.display="flex";
   qrBox.style.display="none";
   
-  // Reseta estado do botão da lanterna
   torchBtn.style.display="none";
   torchBtn.classList.remove("on");
   torchBtn.textContent="🔦";
@@ -345,6 +356,9 @@ function pararCam(){
 }
 
 async function lerGaleria(input){
+  // Ativação por intenção de clique na galeria
+  try { inicializarSomEVibracao(); } catch(e){}
+
   const files=[...input.files];if(!files.length)return;
   let ok=0,err=0;
   for(const f of files){
