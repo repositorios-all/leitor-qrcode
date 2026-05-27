@@ -38,7 +38,6 @@
   @keyframes pop{50%{transform:scale(1.06)}100%{transform:scale(1)}}
   #dbg{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.8);color:#4ade80;font-size:11px;font-family:monospace;padding:6px 8px;text-align:center;display:none;z-index:20}
 
-  /* Botão Lanterna */
   #btn-torch {
     position: absolute;
     top: 14px;
@@ -133,16 +132,7 @@
     <div class="card-header">
       <div class="ch-icon green">📤</div>
       <div><h2>Exportar</h2></div>
-    </div>
-    <div class="card-body" style="display:flex; flex-direction:column; gap:8px;">
-      <button class="btn gray" onclick="expShare()">📡 Menu Compartilhar Geral</button>
-      
-      <div class="btn-row" style="margin-top:0">
-        <button class="btn gray" onclick="expWhatsApp()">💬 WhatsApp</button>
-        <button class="btn gray" onclick="expEmail()">📧 E-mail</button>
-      </div>
-      
-      <button class="btn gray" onclick="expLocal()">💾 Salvar Arquivo Local</button>
+      <button class="btn gray" onclick="expShare()" style="margin-left:auto; padding:6px 12px; font-size:12px; border-radius:8px; width:auto; background:var(--white); border-color:var(--gray-bd);">📡 Enviar arquivo</button>
     </div>
   </div>
 
@@ -192,9 +182,6 @@ function inicializarSomEVibracao() {
   if (audioCtx && audioCtx.state === 'suspended') {
     audioCtx.resume();
   }
-  if ("vibrate" in navigator) {
-    navigator.vibrate([1]); 
-  }
 }
 
 function beep(){
@@ -211,12 +198,9 @@ function beep(){
   
   try{ 
     if("vibrate" in navigator) {
-      const sucesso = navigator.vibrate([150, 50, 150]); 
-      log(`Lido! Vibração: ${sucesso ? "OK" : "Bloqueada pelo SO"}`);
-    } else {
-      log("Lido! API Vibrate ausente (iOS?)");
+      navigator.vibrate([150, 50, 150]); 
     }
-  }catch(e){ log("Erro ao vibrar: " + e.message); }
+  }catch(e){}
 }
 
 async function toggleTorch(){
@@ -233,7 +217,6 @@ async function toggleTorch(){
     }
   }catch(e){
     torchOn=!torchOn; 
-    log("Erro lanterna: "+e.message);
   }
 }
 
@@ -416,14 +399,12 @@ function registrarHistorico(mensagem) {
   sub.textContent = `${wrap.children.length} ação(ões) registrada(s)`;
 }
 
-// ── FUNÇÕES DE EXPORTAÇÃO CORRIGIDAS ──────────────────────────────
+// ── FUNÇÃO DE EXPORTAÇÃO EXCLUSIVA PARA ARQUIVO NATIVO ───────────
 function expLocal(){
-  if(!urls.length){alert("Nenhuma URL.");return;}
   const a=document.createElement("a");
   a.href=URL.createObjectURL(new Blob([txt()],{type:"text/plain"}));
   a.download="qrcode_lido.txt";a.click();URL.revokeObjectURL(a.href);
-  
-  registrarHistorico('Salvo arquivo "qrcode_lido.txt" na pasta de Downloads');
+  registrarHistorico('Salvo arquivo "qrcode_lido.txt" na pasta de Downloads (Fallback)');
 }
 
 async function expShare(){
@@ -432,34 +413,11 @@ async function expShare(){
     try{
       const file=new File([txt()],"qrcode_lido.txt",{type:"text/plain"});
       await navigator.share({files:[file]});
-      registrarHistorico('Arquivo enviado via menu de Compartilhamento Geral do sistema');
+      registrarHistorico('Arquivo "qrcode_lido.txt" enviado para o aplicativo selecionado');
       return;
     }catch(e){if(e.name==="AbortError")return;}
   }
   expLocal();
-}
-
-function expEmail(){
-  if(!urls.length){alert("Nenhuma URL.");return;}
-  const email = prompt("Digite o e-mail de destino:");
-  if(!email) return;
-  
-  location.href=`mailto:${email}?subject=${encodeURIComponent("NFC-e "+urls.length+" nota(s)")}&body=${encodeURIComponent("URLs coletadas:\n\n"+txt())}`;
-  
-  registrarHistorico(`Enviado para o e-mail "${email}"`);
-}
-
-function expWhatsApp(){
-  if(!urls.length){alert("Nenhuma URL.");return;}
-  const num = prompt("Digite o número do WhatsApp com DDD (ex: 11999999999):");
-  if(!num) return;
-  
-  const numLimpo = num.replace(/\D/g,'');
-  const texto = encodeURIComponent("Lista de URLs coletadas:\n\n" + txt());
-  
-  window.open(`https://wa.me/55${numLimpo}?text=${texto}`, '_blank');
-  
-  registrarHistorico(`Enviado por WhatsApp para o número "${num}"`);
 }
 
 initDetector().then(renderLista);
