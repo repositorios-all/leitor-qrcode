@@ -36,9 +36,9 @@
   #qr-box{width:62%;aspect-ratio:1/1;border:3px solid rgba(255,255,255,.85);border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.4);display:none;transition:border-color .15s}
   #qr-box.hit{border-color:#4ade80;animation:pop .3s ease}
   @keyframes pop{50%{transform:scale(1.06)}100%{transform:scale(1)}}
-  #dbg{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.8);color:#4ade80;font-size:11px;font-family:monospace;padding:6px 8px;text-align:center;display:none;z-index:20;}
+  #dbg{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.8);color:#4ade80;font-size:11px;font-family:monospace;padding:6px 8px;text-align:center;display:none;z-index:20}
 
-  /* Botão da Lanterna Superior Direito */
+  /* Botão Lanterna */
   #btn-torch {
     position: absolute;
     top: 14px;
@@ -74,12 +74,12 @@
   #status.err{background:#fee2e2;color:var(--red)}
   #status.info{background:var(--blue-lt);color:var(--blue)}
 
-  #lista-wrap{max-height:220px;overflow-y:auto;border-radius:8px;border:1px solid var(--gray-bd);background:var(--gray-lt)}
+  #lista-wrap, #hist-wrap{max-height:220px;overflow-y:auto;border-radius:8px;border:1px solid var(--gray-bd);background:var(--gray-lt)}
   .url-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--gray-bd);font-size:11px;color:var(--text2);word-break:break-all;line-height:1.4}
   .url-item:last-child{border-bottom:none}
   .url-num{flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--blue);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center}
   .del-btn{flex-shrink:0;background:none;border:none;color:var(--red);font-size:15px;cursor:pointer;padding:2px 4px}
-  #empty-msg{text-align:center;padding:18px;font-size:13px;color:var(--text2)}
+  #empty-msg, #hist-empty{text-align:center;padding:18px;font-size:13px;color:var(--text2)}
 
   #file-in{display:none}
 </style>
@@ -134,8 +134,25 @@
       <div class="ch-icon green">📤</div>
       <div><h2>Exportar</h2></div>
     </div>
-    <div class="card-body">
-      <button class="btn green" onclick="expShare()" style="font-size:15px;padding:16px">📡  Compartilhar qrcode_lido.txt</button>
+    <div class="card-body" style="display:flex; flex-direction:column; gap:8px;">
+      <button class="btn gray" onclick="expShare()">📡 Menu Compartilhar Geral</button>
+      
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn gray" onclick="expWhatsApp()">💬 WhatsApp</button>
+        <button class="btn gray" onclick="expEmail()">📧 E-mail</button>
+      </div>
+      
+      <button class="btn gray" onclick="expLocal()">💾 Salvar Arquivo Local</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="ch-icon blue">📜</div>
+      <div><h2>Histórico de Ações</h2><p id="hist-sub">Nenhum envio registrado</p></div>
+    </div>
+    <div class="card-body" style="padding:8px 10px">
+      <div id="hist-wrap"><div id="hist-empty">Nenhum registro de exportação pendente.</div></div>
     </div>
   </div>
 </main>
@@ -175,14 +192,12 @@ function inicializarSomEVibracao() {
   if (audioCtx && audioCtx.state === 'suspended') {
     audioCtx.resume();
   }
-  // Ativação silenciosa da API de vibração
   if ("vibrate" in navigator) {
     navigator.vibrate([1]); 
   }
 }
 
 function beep(){
-  // 1. Áudio
   try{
     if (audioCtx) {
       const o=audioCtx.createOscillator(), g=audioCtx.createGain();
@@ -192,20 +207,16 @@ function beep(){
       g.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime+.22);
       o.start(); o.stop(audioCtx.currentTime+.22);
     }
-  }catch(e){ console.error("Erro áudio", e); }
+  }catch(e){}
   
-  // 2. Vibração (com debug no log da tela)
   try{ 
     if("vibrate" in navigator) {
-      // Usa um array para garantir compatibilidade e cria pulso duplo
       const sucesso = navigator.vibrate([150, 50, 150]); 
       log(`Lido! Vibração: ${sucesso ? "OK" : "Bloqueada pelo SO"}`);
     } else {
       log("Lido! API Vibrate ausente (iOS?)");
     }
-  }catch(e){ 
-    log("Erro ao vibrar: " + e.message); 
-  }
+  }catch(e){ log("Erro ao vibrar: " + e.message); }
 }
 
 async function toggleTorch(){
@@ -295,9 +306,7 @@ function scanJsQR(){
 
 async function toggleCam(){
   if(ms){pararCam();return;}
-  
   try { inicializarSomEVibracao(); } catch(e){}
-
   const btn=document.getElementById("btn-cam");
   btn.textContent="⏳ Iniciando...";btn.disabled=true;
   try{
@@ -388,22 +397,69 @@ async function lerGaleria(input){
 }
 
 const txt=()=>urls.join("\n");
+
+// ── ENGINE DE REGISTRO DO HISTÓRICO ──────────────────────────────
+function registrarHistorico(mensagem) {
+  const wrap = document.getElementById("hist-wrap");
+  const sub = document.getElementById("hist-sub");
+  const empty = document.getElementById("hist-empty");
+  
+  if(empty) empty.remove();
+  
+  const agora = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+  const item = document.createElement("div");
+  item.className = "url-item";
+  item.style.fontSize = "12px";
+  item.innerHTML = `<span style="color:var(--blue); font-weight:700; font-family:monospace; margin-right:4px;">[${agora}]</span> <span style="flex:1">${mensagem}</span>`;
+  
+  wrap.insertBefore(item, wrap.firstChild);
+  sub.textContent = `${wrap.children.length} ação(ões) registrada(s)`;
+}
+
+// ── FUNÇÕES DE EXPORTAÇÃO CORRIGIDAS ──────────────────────────────
 function expLocal(){
   if(!urls.length){alert("Nenhuma URL.");return;}
   const a=document.createElement("a");
   a.href=URL.createObjectURL(new Blob([txt()],{type:"text/plain"}));
   a.download="qrcode_lido.txt";a.click();URL.revokeObjectURL(a.href);
+  
+  registrarHistorico('Salvo arquivo "qrcode_lido.txt" na pasta de Downloads');
 }
+
 async function expShare(){
   if(!urls.length){alert("Nenhuma URL.");return;}
   if(navigator.share){
     try{
       const file=new File([txt()],"qrcode_lido.txt",{type:"text/plain"});
       await navigator.share({files:[file]});
+      registrarHistorico('Arquivo enviado via menu de Compartilhamento Geral do sistema');
       return;
     }catch(e){if(e.name==="AbortError")return;}
   }
   expLocal();
+}
+
+function expEmail(){
+  if(!urls.length){alert("Nenhuma URL.");return;}
+  const email = prompt("Digite o e-mail de destino:");
+  if(!email) return;
+  
+  location.href=`mailto:${email}?subject=${encodeURIComponent("NFC-e "+urls.length+" nota(s)")}&body=${encodeURIComponent("URLs coletadas:\n\n"+txt())}`;
+  
+  registrarHistorico(`Enviado para o e-mail "${email}"`);
+}
+
+function expWhatsApp(){
+  if(!urls.length){alert("Nenhuma URL.");return;}
+  const num = prompt("Digite o número do WhatsApp com DDD (ex: 11999999999):");
+  if(!num) return;
+  
+  const numLimpo = num.replace(/\D/g,'');
+  const texto = encodeURIComponent("Lista de URLs coletadas:\n\n" + txt());
+  
+  window.open(`https://wa.me/55${numLimpo}?text=${texto}`, '_blank');
+  
+  registrarHistorico(`Enviado por WhatsApp para o número "${num}"`);
 }
 
 initDetector().then(renderLista);
